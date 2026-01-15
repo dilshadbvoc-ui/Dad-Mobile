@@ -23,9 +23,19 @@ class DeviceBridge {
         console.log('Initializing DeviceBridge for user:', userId);
         this.userId = userId;
 
-        await this.requestPermissions();
-        this.connectSocket();
-        this.startCallListener();
+        const permissionsGranted = await this.requestPermissions();
+        if (!permissionsGranted) {
+            Alert.alert('Permission Error', 'Cannot start call detection without permissions.');
+            return;
+        }
+
+        try {
+            this.connectSocket();
+            this.startCallListener();
+        } catch (error) {
+            console.error('Initialization error:', error);
+            Alert.alert('Error', 'Failed to initialize services: ' + error.message);
+        }
     }
 
     async requestPermissions() {
@@ -35,14 +45,20 @@ class DeviceBridge {
                     PermissionsAndroid.PERMISSIONS.CALL_PHONE,
                     PermissionsAndroid.PERMISSIONS.READ_PHONE_STATE,
                     PermissionsAndroid.PERMISSIONS.READ_EXTERNAL_STORAGE,
-                    // Manifest must also include MANAGE_EXTERNAL_STORAGE for Android 11+ full access
-                    // but standard runtime permission covers most media cases
                 ]);
-                console.log('Permissions:', granted);
+
+                const isGranted =
+                    granted[PermissionsAndroid.PERMISSIONS.CALL_PHONE] === PermissionsAndroid.RESULTS.GRANTED &&
+                    granted[PermissionsAndroid.PERMISSIONS.READ_PHONE_STATE] === PermissionsAndroid.RESULTS.GRANTED;
+
+                console.log('Permissions State:', granted);
+                return isGranted;
             } catch (err) {
                 console.warn(err);
+                return false;
             }
         }
+        return true; // iOS or other
     }
 
     connectSocket() {
@@ -78,24 +94,29 @@ class DeviceBridge {
     startCallListener() {
         if (this.isMonitoring) return;
 
-        this.callDetector = new CallDetectorManager((event, phoneNumber) => {
-            console.log('Call Detector Event:', event);
-
-            // 'Disconnected' or 'Missed' implies call ended
-            if (event === 'Disconnected' && this.currentCallId) {
-                console.log('Call ended. Waiting for recording file...');
-                // Wait 3 seconds for the file system to update
-                setTimeout(() => this.findAndUploadRecording(), 3000);
-            }
-        },
-            true,
-            () => { console.log('Permission Denied for Call State'); },
-            {
-                title: 'Phone State Permission',
-                message: 'This app needs access to your phone state to detect call end.'
-            });
-
         this.isMonitoring = true;
+
+        try {
+            this.callDetector = new CallDetectorManager((event, phoneNumber) => {
+                console.log('Call Detector Event:', event);
+
+                // 'Disconnected' or 'Missed' implies call ended
+                if (event === 'Disconnected' && this.currentCallId) {
+                    console.log('Call ended. Waiting for recording file...');
+                    // Wait 3 seconds for the file system to update
+                    setTimeout(() => this.findAndUploadRecording(), 3000);
+                }
+            },
+                true,
+                () => { console.log('Permission Denied for Call State'); },
+                {
+                    title: 'Phone State Permission',
+                    message: 'This app needs access to your phone state to detect call end.'
+                });
+        } catch (error) {
+            console.error('Failed to start Call Detector:', error);
+            this.isMonitoring = false;
+        }
     }
 
     async findAndUploadRecording() {

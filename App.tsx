@@ -20,13 +20,17 @@ function App() {
   const [userId, setUserId] = useState('');
   const [status, setStatus] = useState('Disconnected');
 
-  const handleConnect = () => {
+  const handleConnect = async () => {
     if (!userId) {
       Alert.alert('Error', 'Please enter your User ID');
       return;
     }
-    deviceBridge.init(userId);
-    setStatus('Connected & Listening');
+    try {
+      await deviceBridge.init(userId);
+      setStatus('Connected & Listening');
+    } catch (e: any) {
+      Alert.alert('Connection Failed', e.message || 'Unknown error');
+    }
   };
 
   return (
