@@ -40,18 +40,35 @@ class DeviceBridge {
     async requestPermissions() {
         if (Platform.OS === 'android') {
             try {
-                const granted = await PermissionsAndroid.requestMultiple([
+                let permissionsToRequest = [
                     PermissionsAndroid.PERMISSIONS.CALL_PHONE,
                     PermissionsAndroid.PERMISSIONS.READ_PHONE_STATE,
-                    PermissionsAndroid.PERMISSIONS.READ_EXTERNAL_STORAGE,
-                ]);
+                ];
 
-                const isGranted =
-                    granted[PermissionsAndroid.PERMISSIONS.CALL_PHONE] === PermissionsAndroid.RESULTS.GRANTED &&
-                    granted[PermissionsAndroid.PERMISSIONS.READ_PHONE_STATE] === PermissionsAndroid.RESULTS.GRANTED;
+                if (Platform.Version >= 33) {
+                    permissionsToRequest.push(PermissionsAndroid.PERMISSIONS.READ_MEDIA_AUDIO);
+                } else {
+                    permissionsToRequest.push(PermissionsAndroid.PERMISSIONS.READ_EXTERNAL_STORAGE);
+                }
 
-                console.log('Permissions State:', granted);
-                return isGranted;
+                console.log('Requesting Permissions:', permissionsToRequest);
+
+                const granted = await PermissionsAndroid.requestMultiple(permissionsToRequest);
+
+                console.log('Permissions Result:', granted);
+
+                const callGranted = granted[PermissionsAndroid.PERMISSIONS.CALL_PHONE] === PermissionsAndroid.RESULTS.GRANTED;
+                const phoneStateGranted = granted[PermissionsAndroid.PERMISSIONS.READ_PHONE_STATE] === PermissionsAndroid.RESULTS.GRANTED;
+
+                // Check storage/audio permission based on version
+                let storageGranted = false;
+                if (Platform.Version >= 33) {
+                    storageGranted = granted[PermissionsAndroid.PERMISSIONS.READ_MEDIA_AUDIO] === PermissionsAndroid.RESULTS.GRANTED;
+                } else {
+                    storageGranted = granted[PermissionsAndroid.PERMISSIONS.READ_EXTERNAL_STORAGE] === PermissionsAndroid.RESULTS.GRANTED;
+                }
+
+                return callGranted && phoneStateGranted && storageGranted;
             } catch (err) {
                 console.warn(err);
                 return false;
