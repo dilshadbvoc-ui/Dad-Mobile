@@ -25,8 +25,7 @@ class DeviceBridge {
 
         const permissionsGranted = await this.requestPermissions();
         if (!permissionsGranted) {
-            Alert.alert('Permission Error', 'Cannot start call detection without permissions.');
-            return;
+            throw new Error('Permissions (Phone/Storage) were denied. Please enable them in settings.');
         }
 
         try {

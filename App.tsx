@@ -47,16 +47,18 @@ function App() {
       if (user && (user.id || user._id)) {
         setUserInfo(user);
         setIsLoggedIn(true);
-        setStatus('Initializing...');
+        setStatus('Login Success. Requesting Permissions...');
 
-        // Auto-connect bridge
         const userId = user.id || user._id;
+
         try {
+          // Artificial delay to let UI render the status
+          await new Promise(r => setTimeout(r, 500));
           await deviceBridge.init(userId);
           setStatus('Connected & Listening');
         } catch (bridgeError: any) {
           setStatus('Connection Failed');
-          Alert.alert('Bridge Error', bridgeError.message);
+          Alert.alert('Initialization Error', bridgeError.message);
         }
 
       } else {
