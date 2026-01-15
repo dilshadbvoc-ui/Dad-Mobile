@@ -9,28 +9,76 @@ import {
   View,
   Button,
   TextInput,
-  Alert
+  Alert,
+  ActivityIndicator,
+  TouchableOpacity
 } from 'react-native';
-
+import axios from 'axios';
 import { deviceBridge } from './DeviceBridge';
+
+// Reuse the server URL from DeviceBridge or define it centrally
+const SERVER_URL = 'https://dad-backend.onrender.com';
 
 function App() {
   const isDarkMode = useColorScheme() === 'dark';
-  // Hardcoded for demo - ideally this comes from a Login Screen
-  const [userId, setUserId] = useState('');
+
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [userInfo, setUserInfo] = useState<any>(null);
   const [status, setStatus] = useState('Disconnected');
 
-  const handleConnect = async () => {
-    if (!userId) {
-      Alert.alert('Error', 'Please enter your User ID');
+  const handleLogin = async () => {
+    if (!email || !password) {
+      Alert.alert('Error', 'Please enter both email and password');
       return;
     }
+
+    setIsLoading(true);
     try {
-      await deviceBridge.init(userId);
-      setStatus('Connected & Listening');
-    } catch (e: any) {
-      Alert.alert('Connection Failed', e.message || 'Unknown error');
+      const response = await axios.post(`${SERVER_URL}/api/auth/login`, {
+        email,
+        password
+      });
+
+      const user = response.data.user || response.data; // Adjust based on actual API response structure
+
+      if (user && (user.id || user._id)) {
+        setUserInfo(user);
+        setIsLoggedIn(true);
+        setStatus('Initializing...');
+
+        // Auto-connect bridge
+        const userId = user.id || user._id;
+        try {
+          await deviceBridge.init(userId);
+          setStatus('Connected & Listening');
+        } catch (bridgeError: any) {
+          setStatus('Connection Failed');
+          Alert.alert('Bridge Error', bridgeError.message);
+        }
+
+      } else {
+        Alert.alert('Login Failed', 'Invalid response from server');
+      }
+
+    } catch (error: any) {
+      console.error('Login error:', error);
+      const msg = error.response?.data?.message || error.message || 'Login failed';
+      Alert.alert('Error', msg);
+    } finally {
+      setIsLoading(false);
     }
+  };
+
+  const handleLogout = () => {
+    setIsLoggedIn(false);
+    setUserInfo(null);
+    setEmail('');
+    setPassword('');
+    setStatus('Disconnected');
+    // deviceBridge.disconnect(); // If you implement a disconnect method
   };
 
   return (
@@ -47,36 +95,68 @@ function App() {
           <Text style={styles.subtitle}>Call Recording Sync</Text>
         </View>
 
-        <View style={styles.card}>
-          <Text style={styles.label}>Connect to CRM</Text>
-          <Text style={styles.status}>Status: {status}</Text>
+        {!isLoggedIn ? (
+          <View style={styles.card}>
+            <Text style={styles.label}>Agent Login</Text>
 
-          <Text style={styles.instruction}>
-            Enter your User ID from the CRM to pair this device.
-          </Text>
+            <TextInput
+              style={styles.input}
+              placeholder="Email"
+              value={email}
+              onChangeText={setEmail}
+              autoCapitalize="none"
+              keyboardType="email-address"
+            />
 
-          <TextInput
-            style={styles.input}
-            placeholder="Enter User ID (e.g. 65a...)"
-            value={userId}
-            onChangeText={setUserId}
-          />
+            <TextInput
+              style={styles.input}
+              placeholder="Password"
+              value={password}
+              onChangeText={setPassword}
+              secureTextEntry
+            />
 
-          <Button
-            title="Connect Bridge"
-            onPress={handleConnect}
-          />
-        </View>
+            <View style={styles.buttonContainer}>
+              {isLoading ? (
+                <ActivityIndicator size="small" color="#0000ff" />
+              ) : (
+                <Button
+                  title="Login to CRM"
+                  onPress={handleLogin}
+                />
+              )}
+            </View>
+          </View>
+        ) : (
+          <View style={styles.card}>
+            <Text style={styles.label}>Welcome, {userInfo?.firstName || 'User'}</Text>
+            <Text style={[styles.status, { color: status.includes('Connected') ? '#10B981' : '#EF4444' }]}>
+              Status: {status}
+            </Text>
+
+            <View style={styles.info}>
+              <Text style={styles.infoText}>ID: {userInfo?.userId || userInfo?.id}</Text>
+              <Text style={styles.infoText}>Role: {userInfo?.role}</Text>
+            </View>
+
+            <View style={styles.divider} />
+
+            <Text style={styles.instruction}>
+              App is active in background.
+              Calls initiated from CRM will appear here.
+            </Text>
+
+            <Button
+              title="Logout"
+              onPress={handleLogout}
+              color="#EF4444"
+            />
+          </View>
+        )}
 
         <View style={styles.info}>
-          <Text style={styles.infoText}>
-            1. Keep this app running in the background.
-          </Text>
-          <Text style={styles.infoText}>
-            2. Initiate calls from your Web CRM.
-          </Text>
-          <Text style={styles.infoText}>
-            3. Recordings will auto-upload when finished.
+          <Text style={styles.footerText}>
+            v1.1.0 (Login Enabled)
           </Text>
         </View>
 
@@ -120,21 +200,23 @@ const styles = StyleSheet.create({
     marginBottom: 24,
   },
   label: {
-    fontSize: 18,
+    fontSize: 20,
     fontWeight: '600',
-    marginBottom: 12,
+    marginBottom: 16,
     color: '#374151',
+    textAlign: 'center'
   },
   status: {
-    fontSize: 14,
-    color: '#10B981',
-    fontWeight: '500',
-    marginBottom: 24,
+    fontSize: 16,
+    fontWeight: '600',
+    marginBottom: 16,
+    textAlign: 'center'
   },
   instruction: {
     fontSize: 14,
     color: '#6B7280',
-    marginBottom: 8,
+    marginBottom: 24,
+    textAlign: 'center'
   },
   input: {
     borderWidth: 1,
@@ -143,14 +225,28 @@ const styles = StyleSheet.create({
     padding: 12,
     marginBottom: 16,
     fontSize: 16,
+    backgroundColor: '#F9FAFB'
+  },
+  buttonContainer: {
+    marginTop: 8
   },
   info: {
-    padding: 12,
+    marginBottom: 16
   },
   infoText: {
     fontSize: 14,
-    color: '#6B7280',
-    marginBottom: 8,
+    color: '#4B5563',
+    marginBottom: 4,
+  },
+  divider: {
+    height: 1,
+    backgroundColor: '#E5E7EB',
+    marginVertical: 16
+  },
+  footerText: {
+    textAlign: 'center',
+    color: '#9CA3AF',
+    fontSize: 12
   }
 });
 
