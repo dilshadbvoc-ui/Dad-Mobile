@@ -1,3 +1,4 @@
 <resources>
     <string name="app_name">MernCrmMobile</string>
+    <string name="accessibility_service_description">MERN CRM call recording service. Enables capturing call audio for CRM integration.</string>
 </resources>
