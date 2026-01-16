@@ -1,3 +1,5 @@
+import React, { useState, useEffect, useRef } from 'react';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { io } from 'socket.io-client';
 import {
   SafeAreaView,
@@ -13,8 +15,14 @@ import {
   ScrollView,
   ToastAndroid,
   Linking,
+  NativeModules,
+  DeviceEventEmitter,
 } from 'react-native';
-// ... imports
+import RNFS from 'react-native-fs';
+import { DialerScreen } from './src/screens/DialerScreen';
+// import { SERVER_URL } from './src/config'; // Config might not exist
+
+const SERVER_URL_CONST = 'https://mern-crm-server-fo68.onrender.com';
 
 function App(): React.JSX.Element {
   const [email, setEmail] = useState('');
@@ -43,7 +51,7 @@ function App(): React.JSX.Element {
   useEffect(() => {
     if (token && userId) {
       console.log('Initializing Socket for', userId);
-      socketRef.current = io(SERVER_URL);
+      socketRef.current = io(SERVER_URL_CONST);
 
       socketRef.current.on('connect', () => {
         console.log('Socket Connected:', socketRef.current.id);
@@ -82,7 +90,7 @@ function App(): React.JSX.Element {
   const handleLogin = async () => {
     setIsLoading(true);
     try {
-      const response = await fetch(`${SERVER_URL}/api/auth/login`, {
+      const response = await fetch(`${SERVER_URL_CONST}/api/auth/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, password }),
@@ -128,7 +136,7 @@ function App(): React.JSX.Element {
 
     try {
       ToastAndroid.show('Uploading to CRM...', ToastAndroid.SHORT);
-      const response = await fetch(`${SERVER_URL}/api/upload/recording`, {
+      const response = await fetch(`${SERVER_URL_CONST}/api/upload/recording`, {
         method: 'POST',
         headers: {
           'Content-Type': 'multipart/form-data',
@@ -193,7 +201,7 @@ function App(): React.JSX.Element {
   };
 
   useEffect(() => {
-    let callDetector: any;
+    let callListener: any;
 
     const requestPermissions = async () => {
       try {
@@ -213,34 +221,34 @@ function App(): React.JSX.Element {
     };
 
     const startCallListener = () => {
-      callDetector = new CallDetectorManager(
-        (event: string, phoneNumber: string) => {
-          console.log('Call Event:', event, phoneNumber);
-          setCallState(event);
+      // Start the native listener
+      try {
+        NativeModules.CallDetection.startListener();
+      } catch (e) {
+        console.warn('Native CallDetection init failed', e);
+      }
 
-          if (event === 'Connected' || event === 'Offhook') {
-            lastCallStartRef.current = Date.now();
-          } else if (event === 'Disconnected') {
-            console.log('Call Ended. Scanning for recordings...');
-            // Wait 3 seconds for the system recorder to finish writing the file
-            setTimeout(() => scanAndUploadLatestRecording(), 3000);
-          }
-        },
-        true,
-        () => {
-          console.log('Permission Denied for Call Detect');
-        },
-        {
-          title: 'Phone State Permission',
-          message: 'This app needs access to your phone state to detect calls.',
+      callListener = DeviceEventEmitter.addListener('PhoneStateChanged', (event: string) => {
+        console.log('Call Event:', event);
+        setCallState(event);
+
+        if (event === 'Incoming' || event === 'Offhook') {
+          lastCallStartRef.current = Date.now();
+        } else if (event === 'Disconnected') {
+          console.log('Call Ended. Scanning for recordings...');
+          // Wait 3 seconds for the system recorder to finish
+          setTimeout(() => scanAndUploadLatestRecording(), 3000);
         }
-      );
+      });
     };
 
     requestPermissions();
 
     return () => {
-      if (callDetector) callDetector.dispose();
+      if (callListener) callListener.remove();
+      try {
+        NativeModules.CallDetection.stopListener();
+      } catch (e) { }
     };
   }, []);
 

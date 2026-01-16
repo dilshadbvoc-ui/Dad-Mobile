@@ -19,8 +19,7 @@ public class AppPackage implements ReactPackage {
     @Override
     public List<NativeModule> createNativeModules(ReactApplicationContext reactContext) {
         List<NativeModule> modules = new ArrayList<>();
-        // modules.add(new CallDetectionModule(reactContext)); // Removed to avoid
-        // conflict with autolinked library
+        modules.add(new CallDetectionModule(reactContext));
         modules.add(new CallBridge(reactContext));
         return modules;
     }
