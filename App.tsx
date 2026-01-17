@@ -18,11 +18,12 @@ import {
   NativeModules,
   DeviceEventEmitter,
 } from 'react-native';
+import ReceiveSharingIntent from 'react-native-receive-sharing-intent';
 import RNFS from 'react-native-fs';
 import { DialerScreen } from './src/screens/DialerScreen';
 // import { SERVER_URL } from './src/config'; // Config might not exist
 
-const SERVER_URL_CONST = 'https://mern-crm-server-fo68.onrender.com';
+const SERVER_URL_CONST = 'https://dad-backend.onrender.com';
 
 function App(): React.JSX.Element {
   const [email, setEmail] = useState('');
@@ -139,19 +140,30 @@ function App(): React.JSX.Element {
 
   const uploadRecording = async (file: any) => {
     if (!token) {
-      Alert.alert('Upload Failed', 'Not logged in');
+      Alert.alert('Upload Failed', 'Not logged in. Please login first.');
       return;
     }
 
-    const formData = new FormData();
-    formData.append('file', {
-      uri: `file://${file.path}`,
-      type: 'audio/mp4',
-      name: file.name,
-    });
-
     try {
+      // DEBUG: Show what we are trying to upload
+      // Alert.alert('Debug Upload', `Path: ${file.path}\nName: ${file.name}`);
+
+      const formData = new FormData();
+
+      let fileUri = file.path;
+      // If path doesn't start with content:// and not file://, assume it's absolute
+      if (!fileUri.startsWith('content://') && !fileUri.startsWith('file://')) {
+        fileUri = `file://${fileUri}`;
+      }
+
+      formData.append('file', {
+        uri: fileUri,
+        type: file.mimeType || 'audio/mp4', // Use detected mime or fallback
+        name: file.name,
+      });
+
       ToastAndroid.show('Uploading to CRM...', ToastAndroid.SHORT);
+
       const response = await fetch(`${SERVER_URL_CONST}/api/upload/recording`, {
         method: 'POST',
         headers: {
@@ -161,15 +173,19 @@ function App(): React.JSX.Element {
         body: formData,
       });
 
+      const responseText = await response.text(); // Get text debug info
+      console.log('Upload Response:', response.status, responseText);
+
       if (response.ok) {
         ToastAndroid.show('Upload Successful!', ToastAndroid.LONG);
+        Alert.alert('Success', 'Recording uploaded successfully.');
       } else {
         console.warn('Upload Failed:', response.status);
-        ToastAndroid.show('Upload Failed', ToastAndroid.LONG);
+        Alert.alert('Upload Failed', `Server responded with ${response.status}\n${responseText.substring(0, 100)}`);
       }
     } catch (e: any) {
       console.error('Upload Network Error', e);
-      ToastAndroid.show(`Upload Network Error: ${e?.message}`, ToastAndroid.LONG);
+      Alert.alert('Network Error', `Failed to upload: ${e?.message}`);
     }
   };
 
@@ -268,6 +284,55 @@ function App(): React.JSX.Element {
     };
   }, []);
 
+  // Share Intent Handler
+  useEffect(() => {
+    // To handle files shared while app is running or opened via share
+    ReceiveSharingIntent.getReceivedFiles(
+      (files: any[]) => {
+        console.log('Shared files received:', files);
+        // files: [{ filePath: string, fileName: string, ... }]
+        if (files && files.length > 0) {
+          const sharedFile = files[0];
+          // Adapt to uploadRecording format
+          // uploadRecording expects { path, name, mimeType? }
+          const fileToUpload = {
+            path: sharedFile.filePath || sharedFile.contentUri, // Use contentUri if path missing
+            name: sharedFile.fileName || `shared_recording_${Date.now()}.mp4`,
+            mimeType: sharedFile.mimeType, // Pass mimeType if available
+          };
+
+          if (fileToUpload.path) {
+            Alert.alert(
+              'Recording Received',
+              `Ready to upload:\nName: ${fileToUpload.name}\nType: ${fileToUpload.mimeType || 'unknown'}`,
+              [
+                { text: 'Cancel', style: 'cancel' },
+                { text: 'Upload', onPress: () => uploadRecording(fileToUpload) }
+              ]
+            );
+          } else {
+            Alert.alert('Error', 'Received share but could not find file path.');
+          }
+        }
+
+        // Clear intent to avoid re-processing on reload
+        ReceiveSharingIntent.clearReceivedFiles();
+      },
+      (error: any) => {
+        console.log('Share Intent Error:', error);
+      },
+      'ShareMedia' // URL Protocol (not used for file share usually but required arg)
+    );
+
+    return () => {
+      ReceiveSharingIntent.clearReceivedFiles();
+    }
+  }, [token]); // Re-bind if token changes so upload works? Actually uploadRecording uses state token, safe if accessed via closure? 
+  // uploadRecording uses `token` from state. useEffect closure captures initial state? 
+  // Yes, if I don't include [token] or [uploadRecording], it might use stale closure.
+  // Better to pass token to uploadRecording or add it to dependency array.
+  // Adding [token] to dependency array will re-run the listener setup, which is fine.
+
   return (
     <SafeAreaView style={styles.background}>
       {!token ? (
@@ -313,9 +378,10 @@ function App(): React.JSX.Element {
         <View style={{ flex: 1 }}>
           <ScrollView style={{ flex: 1 }}>
             <View style={styles.infoBanner}>
-              <Text style={styles.infoText}>📂 Auto-Fetch Mode</Text>
+              <Text style={styles.infoText}>📂 Auto-Fetch & Share Mode</Text>
               <Text style={styles.subText}>
-                App will scan folder after call ends.
+                1. Auto-scans folder after call.{'\n'}
+                2. Or Share recording from Dialer to MERN CRM.
               </Text>
               <Text style={styles.statusText}>Call State: {callState}</Text>
             </View>
