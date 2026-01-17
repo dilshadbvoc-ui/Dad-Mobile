@@ -85,7 +85,24 @@ function App(): React.JSX.Element {
     } catch (e) { console.warn('Auth check failed', e); }
   };
 
-  // ... loadSettings ...
+
+  const saveSettings = async (path: string) => {
+    try {
+      await AsyncStorage.setItem('recordingPath', path);
+      ToastAndroid.show('Settings Saved', ToastAndroid.SHORT);
+    } catch (e) {
+      console.warn('Failed to save settings');
+    }
+  };
+
+  const loadSettings = async () => {
+    try {
+      const savedPath = await AsyncStorage.getItem('recordingPath');
+      if (savedPath) setRecordingPath(savedPath);
+    } catch (e) {
+      console.warn('Failed to load settings');
+    }
+  };
 
   const handleLogin = async () => {
     setIsLoading(true);
@@ -106,13 +123,12 @@ function App(): React.JSX.Element {
       } else {
         Alert.alert('Login Failed', data.message || 'Invalid credentials');
       }
-    } catch (error) {
+    } catch (error: any) {
+      console.error('Login Error Full:', error);
+      Alert.alert('Login Error', `Network/Server Error: ${error.message}`);
+
       // Demo mode fallback
       if (email === 'demo' && password === 'demo') {
-        setToken('demo-token');
-        setUserId('demo-user');
-      } else {
-        Alert.alert('Login Error', 'Failed to login. using offline mode for demo.');
         setToken('demo-token');
         setUserId('demo-user');
       }
@@ -275,7 +291,21 @@ function App(): React.JSX.Element {
             {isLoading ? (
               <ActivityIndicator />
             ) : (
-              <Button title="Login" onPress={handleLogin} />
+              <View>
+                <Button title="Login" onPress={handleLogin} />
+                <View style={{ marginTop: 10 }}>
+                  <Button title="Test Connection" color="#841584" onPress={async () => {
+                    try {
+                      ToastAndroid.show('Pinging server...', ToastAndroid.SHORT);
+                      console.log('Testing: ' + SERVER_URL_CONST);
+                      const res = await fetch(SERVER_URL_CONST);
+                      Alert.alert('Connection Test', `Status: ${res.status}\nURL: ${SERVER_URL_CONST}\nOK: ${res.ok}`);
+                    } catch (err: any) {
+                      Alert.alert('Connection Error', `Failed to reach server.\n${err.message}`);
+                    }
+                  }} />
+                </View>
+              </View>
             )}
           </View>
         </View>
